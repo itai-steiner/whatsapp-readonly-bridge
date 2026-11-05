@@ -1,0 +1,10 @@
+{
+  "groups": { "read": true, "include": ["שם הקבוצה"], "exclude": [] },
+  "labels": {
+    "sticker": "סטיקר", "location": "מיקום", "liveLocation": "מיקום חי",
+    "contact": "איש קשר", "contacts": "אנשי קשר", "reaction": "תגובה", "to": "ל",
+    "poll": "סקר", "options": "אפשרויות", "pollUpdate": "עדכון סקר", "unknown": "לא ידוע",
+    "received": "התקבל", "couldNotDownload": "לא ניתן להורדה",
+    "mediaTypes": { "image": "תמונה", "video": "סרטון", "audio": "הקלטה", "document": "מסמך" }
+  }
+}

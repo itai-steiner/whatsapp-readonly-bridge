@@ -17,9 +17,22 @@ Derived from the Hermes Agent WhatsApp bridge.
    - `curl localhost:3000/health`: connection state, queue length, `readOnly: true`
    - `curl localhost:3000/messages`: returns and **clears** the queue of new incoming messages (JSON array)
    - `curl localhost:3000/chat/<chatId>`: chat info
+   - `curl localhost:3000/groups`: your groups (id, name)
 
 Message fields: `messageId, chatId, senderId, senderName, chatName, isGroup, body, hasMedia,
 mediaType, mediaUrls, quotedText, timestamp`. Groups end in `@g.us`.
+
+## Customize (groups and language)
+
+Copy `config.example.json` to `config.json` (or pass `--config path`). Everything is optional.
+
+- **Groups**: off by default. Set `"groups": {"read": true}` to read group messages.
+  `include` = only these groups (id like `1203...@g.us` or exact group name), empty = all groups.
+  `exclude` = skip these. Find ids/names with `curl localhost:3000/groups` (needs a linked session).
+  Group messages from others bypass the `self-chat` / `WHATSAPP_ALLOWED_USERS` filters; your own group messages are ignored.
+- **Language**: `"labels"` overrides the placeholder texts in message bodies (`[Location: ...]`,
+  `[image received]`, polls, contacts...). See `config.he.example.json` (Hebrew). Message text itself is never translated.
+- Other changes: edit `bridge.js` (HTTP API and filtering) and `bridge_helpers.js` (message parsing). `npm test` runs a small self-check.
 
 ## Read-only guarantee (do not remove)
 

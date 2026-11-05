@@ -2,6 +2,17 @@ import path from 'path';
 import { mkdirSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
 
+// Text placeholders that end up in message bodies. Override via config.json "labels" (any language).
+export const LABELS = {
+  sticker: 'Sticker', location: 'Location', liveLocation: 'Live location',
+  contact: 'Contact', contacts: 'Contacts', reaction: 'Reaction', to: 'to',
+  poll: 'Poll', options: 'Options', pollUpdate: 'Poll update', unknown: 'unknown',
+  received: 'received', couldNotDownload: 'could not be downloaded',
+  mediaTypes: {}, // e.g. { image: 'תמונה', video: 'סרטון' }
+};
+export function setLabels(overrides = {}) { Object.assign(LABELS, overrides); }
+const mediaLabel = (t) => LABELS.mediaTypes[t] || t;
+
 export const MIME_MAP = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
   webp: 'image/webp', gif: 'image/gif',
@@ -236,7 +247,7 @@ function formatLocationText(location, isLive) {
   const name = location.name || location.address || '';
   const lat = location.degreesLatitude ?? location.latitude;
   const lng = location.degreesLongitude ?? location.longitude;
-  const kind = isLive ? 'Live location' : 'Location';
+  const kind = isLive ? LABELS.liveLocation : LABELS.location;
   const coords = lat !== undefined && lng !== undefined ? `${lat},${lng}` : '';
   return `[${kind}: ${[name, coords].filter(Boolean).join(' ')}]`;
 }
@@ -252,20 +263,20 @@ function locationMetadata(location, isLive) {
 }
 
 function formatContactText(contact) {
-  const name = contact.displayName || contact.vcard?.match(/FN:(.+)/)?.[1] || 'unknown';
+  const name = contact.displayName || contact.vcard?.match(/FN:(.+)/)?.[1] || LABELS.unknown;
   const phone = contact.vcard?.match(/TEL[^:]*:(.+)/)?.[1] || '';
-  return `[Contact: ${[name, phone].filter(Boolean).join(' ')}]`;
+  return `[${LABELS.contact}: ${[name, phone].filter(Boolean).join(' ')}]`;
 }
 
 function formatContactsText(contacts) {
   const names = contacts.map(c => c.displayName).filter(Boolean);
-  return `[Contacts: ${names.join(', ') || contacts.length}]`;
+  return `[${LABELS.contacts}: ${names.join(', ') || contacts.length}]`;
 }
 
 function formatReactionText(reaction) {
   const emoji = reaction.text || '';
   const target = reaction.key?.id || '';
-  return `[Reaction: ${emoji}${target ? ` to ${target}` : ''}]`;
+  return `[${LABELS.reaction}: ${emoji}${target ? ` ${LABELS.to} ${target}` : ''}]`;
 }
 
 function pollOptions(poll) {
@@ -277,12 +288,12 @@ function pollOptions(poll) {
 function formatPollText(poll) {
   const question = poll.name || poll.title || 'poll';
   const options = pollOptions(poll);
-  return `[Poll: ${question}${options.length ? ` Options: ${options.join(', ')}` : ''}]`;
+  return `[${LABELS.poll}: ${question}${options.length ? ` ${LABELS.options}: ${options.join(', ')}` : ''}]`;
 }
 
 function formatPollUpdateText(update) {
   const target = update.pollCreationMessageKey?.id || update.key?.id || '';
-  return `[Poll update${target ? `: ${target}` : ''}]`;
+  return `[${LABELS.pollUpdate}${target ? `: ${target}` : ''}]`;
 }
 
 /**
@@ -292,7 +303,7 @@ function formatPollUpdateText(update) {
  */
 export function appendMediaFailureNote(content, failures) {
   if (!failures || failures.length === 0) return content;
-  const note = failures.map((t) => `[${t} could not be downloaded]`).join(' ');
+  const note = failures.map((t) => `[${mediaLabel(t)} ${LABELS.couldNotDownload}]`).join(' ');
   return content ? `${content}\n${note}` : note;
 }
 
@@ -394,7 +405,7 @@ export async function extractBridgeEvent({
     mediaType = 'sticker';
     nativeType = 'stickerMessage';
     mime = messageContent.stickerMessage.mimetype || 'image/webp';
-    body = '[Sticker]';
+    body = `[${LABELS.sticker}]`;
     nativeMetadata.sticker = {
       animated: !!messageContent.stickerMessage.isAnimated,
       mimetype: mime,
@@ -458,7 +469,7 @@ export async function extractBridgeEvent({
   body = appendMediaFailureNote(body, mediaFailures);
 
   if (hasMedia && !body) {
-    body = `[${mediaType} received]`;
+    body = `[${mediaLabel(mediaType)} ${LABELS.received}]`;
   }
 
   return {

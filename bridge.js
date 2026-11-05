@@ -43,6 +43,8 @@ import {
   extractBridgeEvent,
   inboundReadReceiptKeys,
   inferMediaType,
+  LABELS,
+  setLabels,
   mediaPayloadForFile,
   pollCreationMessageFromPayload,
   pollUpdateForAggregation,
@@ -54,6 +56,18 @@ function getArg(name, defaultVal) {
   const idx = args.indexOf(`--${name}`);
   return idx !== -1 && args[idx + 1] ? args[idx + 1] : defaultVal;
 }
+
+// Optional config.json (see config.example.json): which groups to read + message labels (language).
+const CONFIG = (() => {
+  try { return JSON.parse(readFileSync(getArg('config', 'config.json'), 'utf8')); }
+  catch (e) { if (e.code !== 'ENOENT') console.warn('[bridge] bad config:', e.message); return {}; }
+})();
+setLabels(CONFIG.labels);
+const GROUPS = {
+  read: CONFIG.groups?.read === true,           // off by default
+  include: CONFIG.groups?.include || [],        // group ids or names; empty = all groups
+  exclude: CONFIG.groups?.exclude || [],
+};
 
 const WHATSAPP_DEBUG =
   typeof process !== 'undefined' &&
@@ -337,7 +351,7 @@ function enqueuePollUpdateEvent({ key, update, selectedOptions, aggregation }) {
     }
     return;
   }
-  const chosenText = selectedOptions.length ? selectedOptions.join(', ') : `[Poll update${pollId ? `: ${pollId}` : ''}]`;
+  const chosenText = selectedOptions.length ? selectedOptions.join(', ') : `[${LABELS.pollUpdate}${pollId ? `: ${pollId}` : ''}]`;
   const dedupeId = `poll:${pollId}:${senderId}:${selectedOptions.join('|')}`;
   if (recentlyProcessedPollUpdates.has(dedupeId)) return;
   recentlyProcessedPollUpdates.remember(dedupeId);
@@ -382,6 +396,23 @@ function rememberSentId(id) {
 }
 
 let sock = null;
+
+const groupNames = new Map();
+async function groupSubject(chatId) {
+  if (!groupNames.has(chatId)) {
+    const subject = await sock.groupMetadata(chatId).then((m) => m.subject).catch(() => '');
+    if (!subject) return '';
+    groupNames.set(chatId, subject);
+  }
+  return groupNames.get(chatId);
+}
+async function groupWanted(chatId) {
+  if (!GROUPS.read) return false;
+  const subject = await groupSubject(chatId);
+  const hit = (list) => list.some((x) => x === chatId || x === subject);
+  if (hit(GROUPS.exclude)) return false;
+  return !GROUPS.include.length || hit(GROUPS.include);
+}
 let connectionState = 'disconnected';
 
 function emitPairEvent(event) {
@@ -641,7 +672,8 @@ async function startSocket() {
       // themselves — stranger DMs / group pings must never reach the
       // Python gateway, otherwise a pairing-code reply fires in response
       // to arbitrary incoming messages (#8389).
-      if (!msg.key.fromMe) {
+      const groupOk = isGroup && !msg.key.fromMe && await groupWanted(chatId);
+      if (!msg.key.fromMe && !groupOk) {
         if (WHATSAPP_MODE === 'self-chat') {
           try {
             console.log(JSON.stringify({
@@ -741,6 +773,7 @@ async function startSocket() {
         },
       });
       event.fromOwner = fromOwner;
+      if (groupOk) event.chatName = (await groupSubject(chatId)) || event.chatName;
 
       // Ignore Hermes' own reply messages in self-chat mode to avoid loops.
       if (msg.key.fromMe && ((REPLY_PREFIX && event.body.startsWith(REPLY_PREFIX)) || recentlySentIds.has(msg.key.id))) {
@@ -1097,6 +1130,13 @@ app.post('/read', async (req, res) => {
     console.warn('[bridge] failed to send read receipt:', err.message);
     return res.status(500).json({ error: 'Failed to send read receipt' });
   }
+});
+
+// List groups (id + name) so you can fill groups.include / groups.exclude
+app.get('/groups', async (req, res) => {
+  if (!sock || connectionState !== 'connected') return res.status(503).json({ error: 'not connected' });
+  const all = await sock.groupFetchAllParticipating().catch(() => ({}));
+  res.json(Object.values(all).map((g) => ({ id: g.id, name: g.subject, participants: g.participants.length })));
 });
 
 // Chat info
